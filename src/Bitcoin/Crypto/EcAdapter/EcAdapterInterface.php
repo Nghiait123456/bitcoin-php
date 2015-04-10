@@ -3,6 +3,7 @@
 namespace BitWasp\Bitcoin\Crypto\EcAdapter;
 
 use BitWasp\Bitcoin\Address\PayToPubKeyHashAddress;
+use BitWasp\Bitcoin\Signature\Signature;
 use BitWasp\Buffertools\Buffer;
 use BitWasp\Bitcoin\Crypto\Random\RbgInterface;
 use BitWasp\Bitcoin\Key\PrivateKeyInterface;
@@ -37,12 +38,12 @@ interface EcAdapterInterface
     public function recoverYfromX($xCoord, $prefix);
 
     /**
-     * @param SignatureCollection $signatures
+     * @param SignatureInterface[] $signatures
      * @param Buffer $messageHash
      * @param PublicKeyInterface[] $publicKeys
      * @return SignatureInterface[]
      */
-    public function associateSigs(SignatureCollection $signatures, Buffer $messageHash, array $publicKeys);
+    public function associateSigs(array $signatures, Buffer $messageHash, array $publicKeys);
 
     /**
      * @param PrivateKeyInterface $privateKey

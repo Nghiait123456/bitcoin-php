@@ -3,6 +3,7 @@
 namespace BitWasp\Bitcoin\Script;
 
 use BitWasp\Bitcoin\Bitcoin;
+use BitWasp\Bitcoin\Signature\Signature;
 use BitWasp\Bitcoin\Transaction\TransactionSignature;
 use BitWasp\Bitcoin\Transaction\TransactionSignatureCollection;
 use BitWasp\Buffertools\Buffer;
@@ -23,11 +24,11 @@ class InputScriptFactory
     }
 
     /**
-     * @param TransactionSignature $signature
+     * @param SignatureInterface $signature
      * @param PublicKeyInterface $publicKey
      * @return Script
      */
-    public function payToPubKeyHash(TransactionSignature $signature, PublicKeyInterface $publicKey)
+    public function payToPubKeyHash(SignatureInterface $signature, PublicKeyInterface $publicKey)
     {
            return ScriptFactory::create()
             ->push($signature->getBuffer())
@@ -36,21 +37,13 @@ class InputScriptFactory
 
     /**
      * @param RedeemScript $redeemScript
-     * @param TransactionSignatureCollection $sigs
+     * @param SignatureInterface[] $signatures
      * @param Buffer $hash
      * @return array
      */
-    public function multisigP2sh(RedeemScript $redeemScript, TransactionSignatureCollection $sigs, Buffer $hash)
+    public function multisigP2sh(RedeemScript $redeemScript, array $signatures, Buffer $hash)
     {
         $signer = Bitcoin::getEcAdapter();
-
-        // Extract signatures
-        $signatures = new SignatureCollection(array_map(
-            function (TransactionSignature $value) {
-                return $value->getSignature();
-            },
-            $sigs->getSignatures()
-        ));
 
         // Associate signatures with public keys
         $linked = $signer->associateSigs($signatures, $hash, $redeemScript->getKeys());

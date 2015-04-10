@@ -36,35 +36,9 @@ class TransactionBuilder
     private $deterministicSignatures = true;
 
     /**
-     * @var SignatureCollection[]
+     * @var TransactionBuilderInputState[]
      */
-    private $inputSigs = [];
-
-    /**
-     * @var PublicKeyInterface[]
-     */
-    private $publicKeys = [];
-
-    /**
-     * @var ScriptInterface[]
-     */
-    private $outputScript = [];
-
-    /**
-     * @var RedeemScript[]
-     */
-    private $redeemScript = [];
-
-    /**
-     * Contains msg32's of p2sh transactions, required to sort signatures
-     * @var array
-     */
-    private $txHash = [];
-
-    /**
-     * @var integer[]
-     */
-    private $classification = [];
+    private $inputStates = [];
 
     /**
      * @var EcAdapterInterface
@@ -120,172 +94,71 @@ class TransactionBuilder
     }
 
     /**
-     * @param $forInput
-     * @param PublicKeyInterface $publicKey
-     * @return $this
-     */
-    private function addPublicKey($forInput, PublicKeyInterface $publicKey)
-    {
-        if (isset($this->publicKeys[$forInput])) {
-            $this->publicKeys[$forInput][] = $publicKey;
-        } else {
-            $this->publicKeys[$forInput] = [$publicKey];
-        }
-
-        return $this;
-    }
-
-    /**
-     * @param $forInput
-     * @param TransactionSignature $txSig
-     * @return $this
-     */
-    private function addSignature($forInput, TransactionSignature $txSig)
-    {
-        if (isset($this->inputSigs[$forInput])) {
-            $this->inputSigs[$forInput]->addSignature($txSig);
-        } else {
-            $this->inputSigs[$forInput] = new TransactionSignatureCollection([$txSig]);
-        }
-
-        return $this;
-    }
-
-    /**
-     * @param $forInput
-     * @param ScriptInterface $outputScript
-     * @return $this
-     */
-    private function addOutputScript($forInput, ScriptInterface $outputScript)
-    {
-        if (!isset($this->outputScript[$forInput])) {
-            $this->outputScript[$forInput] = $outputScript;
-        }
-
-        return $this;
-    }
-
-    /**
-     * @param $forInput
-     * @param RedeemScript $redeemScript
-     * @return $this
-     */
-    private function addRedeemScript($forInput, RedeemScript $redeemScript)
-    {
-        if (!isset($this->redeemScript[$forInput])) {
-            $this->redeemScript[$forInput] = $redeemScript;
-        }
-
-        return $this;
-    }
-
-    /**
-     * @param $forInput
-     * @param ScriptInterface $script
-     * @return $this
-     */
-    private function addClassification($forInput, ScriptInterface $script)
-    {
-        if (!isset($this->classification[$forInput])) {
-            if ($script instanceof RedeemScript) {
-                // Todo: revise.. or rename RedeemScript.
-                $this->addRedeemScript($forInput, $script);
-                $this->classification[$forInput] = OutputClassifier::MULTISIG;
-                $this->outputScript[$forInput] = $script->getOutputScript();
-            } else {
-                $classifier = new OutputClassifier($script);
-                $this->classification[$forInput] = $classifier->classify();
-                $this->outputScript[$forInput] = $script;
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * @param $forInput
-     * @return int
-     */
-    private function getClassification($forInput)
-    {
-        return $this->classification[$forInput];
-    }
-
-    /**
-     * @param $forInput
+     * @param TransactionBuilderInputState $inputState
      * @throws \Exception
      */
-    private function extractSigs($forInput)
+    private function extractSigs(TransactionBuilderInputState $inputState)
     {
         // Todo: should wrap in a try {} since this is where we deal with data from outside?
         //  - fromHex() functions can fail hard, from input that mightnt be safe to rely on.
         //  - should it die here, or should it just fail to find a signature, and regenerate with an empty script?
 
-        if (false === isset($this->inputSigs[$forInput])) {
-            $outputScript = $this->outputScript[$forInput];
-            $outParse = $outputScript->getScriptParser()->parse();
-            $inParse = $this->transaction->getInputs()->getInput($forInput)->getScript()->getScriptParser()->parse();
-            $sSize = count($inParse);
+        $outParse = $inputState->getPreviousOutputScript()->getScriptParser()->parse();
+        $inParse = $inputState->getInput()->getScript()->getScriptParser()->parse();
+        $sSize = count($inParse);
 
-            // Parse a SignatureCollection from the script, based on the outputScript
-            $this->inputSigs[$forInput] = new TransactionSignatureCollection();
+        // Parse a SignatureCollection from the script, based on the outputScript
+        // $this->inputSigs[$forInput] = new TransactionSignatureCollection();
 
-            switch ($this->getClassification($forInput)) {
-                case OutputClassifier::PAYTOPUBKEYHASH:
-                    if ($sSize == 2) {
-                        // TODO: TransactionSignatureCollection - so pass a TransactionSignature
-                        // ScriptSig: [vchSig] [vchPubKey]
-                        // ScriptPubKey: OP_DUP OP_HASH160 0x14 [hash] OP_EQUALVERIFY OP_CHECKSIG
-                        $this->addSignature($forInput, SignatureFactory::fromHex($inParse[0], $this->ecAdapter->getMath()));
-                        $this->addPublicKey($forInput, PublicKeyFactory::fromHex($inParse[1]));
-                    }
-
-                    break;
-                case OutputClassifier::PAYTOPUBKEY:
-                    if ($sSize == 1) {
-                        // TODO: TransactionSignatureCollection - so pass a TransactionSignature
-                        // ScriptSig: [vchSig] [vchPubKey]
-                        // ScriptPubKey: [vchPubKey] OP_CHECKSIG
-                        $this->addSignature($forInput, SignatureFactory::fromHex($inParse[0], $this->ecAdapter->getMath()));
-                        $this->addPublicKey($forInput, PublicKeyFactory::fromHex($outParse[0]));
-                    }
-
-                    break;
-                case OutputClassifier::PAYTOSCRIPTHASH:
-                case OutputClassifier::MULTISIG:
+        switch ($inputState->getScriptType()) {
+            case OutputClassifier::PAYTOPUBKEYHASH:
+                if ($sSize == 2) {
                     // TODO: TransactionSignatureCollection - so pass a TransactionSignature
-                    // ScriptSig: OP_0 vector<vchSig> [redeemScript]
-                    // ScriptPubKey:: OP_HASH160 0x14 [hash] OP_EQUAL
-                    if (!isset($this->redeemScript[$forInput])) {
-                        throw new \Exception('Must pass message hash / redeemScript to parse signatures');
-                    }
+                    // ScriptSig: [vchSig] [vchPubKey]
+                    // ScriptPubKey: OP_DUP OP_HASH160 0x14 [hash] OP_EQUALVERIFY OP_CHECKSIG
+                    $inputState->setSignatures([SignatureFactory::fromHex($inParse[0], $this->ecAdapter->getMath())]);
+                    $inputState->setPublicKeys([PublicKeyFactory::fromHex($inParse[1])]);
+                }
 
-                    $redeemScript = $this->redeemScript[$forInput];
-                    $script = end($inParse);
+                break;
+            case OutputClassifier::PAYTOPUBKEY:
+                if ($sSize == 1) {
+                    // TODO: TransactionSignatureCollection - so pass a TransactionSignature
+                    // ScriptSig: [vchSig] [vchPubKey]
+                    // ScriptPubKey: [vchPubKey] OP_CHECKSIG
+                    $inputState->setSignatures([SignatureFactory::fromHex($inParse[0], $this->ecAdapter->getMath())]);
+                    $inputState->setPublicKeys([PublicKeyFactory::fromHex($outParse[0])]);
+                }
 
-                    // Matches, and there is at least one signature.
-                    if ($script !== $redeemScript->getHex() || $sSize < 3) {
-                        break;
-                    }
+                break;
+            case OutputClassifier::PAYTOSCRIPTHASH:
+            case OutputClassifier::MULTISIG:
+                // TODO: TransactionSignatureCollection - so pass a TransactionSignature
+                // ScriptSig: OP_0 vector<vchSig> [redeemScript]
+                // ScriptPubKey:: OP_HASH160 0x14 [hash] OP_EQUAL
+                if (!$inputState->getRedeemScript()) {
+                    throw new \Exception('Must pass message hash / redeemScript to parse signatures');
+                }
 
-                    // Associate a collection of signatures with their public keys
-                    foreach(array_slice($inParse, 1, -2) as $buffer) {
-                        if ($buffer instanceof Buffer) {
-                            $sig = SignatureFactory::fromHex($buffer->getHex());
-                            $this->addSignature($forInput, $sig);
-                        }
-                    }
+                $script = end($inParse);
 
-                    // Extract public keys, and signatures
-                    foreach ($redeemScript->getKeys() as $key) {
-                        $this->addPublicKey($forInput, $key);
-                    }
-
+                // Matches, and there is at least one signature.
+                if ($script !== $inputState->getRedeemScript()->getHex() || $sSize < 3) {
                     break;
-            }
+                }
 
-            $this->addOutputScript($forInput, $outputScript);
+                // Associate a collection of signatures with their public keys
+                foreach(array_slice($inParse, 1, -2) as $idx => $buffer) {
+                    if ($buffer instanceof Buffer) {
+                        $sig = SignatureFactory::fromHex($buffer->getHex());
+                        $inputState->setSignature($idx, $sig);
+                    }
+                }
 
+                // Extract public keys
+                $inputState->setPublicKeys($inputState->getRedeemScript()->getKeys());
+
+                break;
         }
     }
 
@@ -295,21 +168,27 @@ class TransactionBuilder
      */
     private function regenerateScript($forInput)
     {
-        if (false === isset($this->inputSigs[$forInput])) {
+        if (!isset($this->inputStates[$forInput])) {
             return $this->transaction->getInputs()->getInput($forInput)->getScript();
         }
 
-        switch ($this->classification[$forInput]) {
+        $inputState = $this->inputStates[$forInput];
+
+        switch ($inputState->getPreviousOutputClassifier()) {
             case OutputClassifier::PAYTOPUBKEYHASH:
-                $script = ScriptFactory::scriptSig()->payToPubKeyHash($this->inputSigs[$forInput]->getSignature(0), $this->publicKeys[$forInput][0]);
+                $script = ScriptFactory::scriptSig()->payToPubKeyHash($inputState->getSignatures()[0], $inputState->getPublicKeys()[0]);
                 break;
             case OutputClassifier::PAYTOPUBKEY:
-                $script = ScriptFactory::scriptSig()->payToPubKey($this->inputSigs[$forInput][0], $this->publicKeys[$forInput][0]);
+                $script = ScriptFactory::scriptSig()->payToPubKey($inputState->getSignatures()[0], $inputState->getPublicKeys()[0]);
                 break;
             case OutputClassifier::PAYTOSCRIPTHASH:
             case OutputClassifier::MULTISIG:
                 // Todo: separate P2SH / multisig cases, and resolve dependency on txHash.
-                $script = ScriptFactory::scriptSig()->multisigP2sh($this->redeemScript[$forInput], $this->inputSigs[$forInput], $this->txHash[$forInput]);
+                $script = ScriptFactory::scriptSig()->multisigP2sh(
+                    $inputState->getRedeemScript(),
+                    $inputState->getSignatures(),
+                    $inputState->getRedeemScript()->getScriptHash()
+                );
                 break;
             default:
                 // No idea how to classify this input!
@@ -354,23 +233,21 @@ class TransactionBuilder
      * @param Buffer $hash
      * @return \BitWasp\Bitcoin\Signature\Signature
      */
-    public function sign(PrivateKeyInterface $privKey, Buffer $hash, $sigHashType)
+    public function sign(PrivateKeyInterface $privKey, Buffer $hash)
     {
         $random = ($this->deterministicSignatures
             ? new Rfc6979($this->ecAdapter->getMath(), $this->ecAdapter->getGenerator(), $privKey, $hash, 'sha256')
             : new Random());
 
-        return new TransactionSignature(
-            $this->ecAdapter->sign($hash, $privKey, $random),
-            $sigHashType
-        );
+        return $this->ecAdapter->sign($hash, $privKey, $random);
     }
 
     /**
      * @param PrivateKeyInterface $privateKey
+     * @param ScriptInterface $outputScript
      * @param $inputToSign
-     * @param int $sigHashType
      * @param RedeemScript $redeemScript
+     * @param int $sigHashType
      * @return $this
      * @throws \Exception
      */
@@ -379,52 +256,67 @@ class TransactionBuilder
         ScriptInterface $outputScript,
         $inputToSign,
         RedeemScript $redeemScript = null,
-        $sigHashType = SignatureHashInterface::SIGHASH_ALL
+        $sigHashType = null
     ) {
 
         $input = $this->transaction->getInputs()->getInput($inputToSign);
-        $prevOutType = $this->addClassification($inputToSign, $redeemScript ?: $outputScript)->getClassification($inputToSign);
-        $parse = $outputScript->getScriptParser()->parse();
+
+        if (!isset($this->inputStates[$inputToSign])) {
+            $inputState = new TransactionBuilderInputState($input);
+            $inputState->setSigHashType($sigHashType ?: SignatureHashInterface::SIGHASH_ALL);
+        } else {
+            $inputState = $this->inputStates[$inputToSign];
+
+            if ($sigHashType && $inputState->getSigHashType() !== $sigHashType) {
+                throw new \InvalidArgumentException();
+            }
+        }
+
+        if ($redeemScript) {
+            $inputState->setRedeemScript($redeemScript);
+            $inputState->setScriptType(OutputClassifier::MULTISIG);
+            $inputState->setPreviousOutputScript($redeemScript->getOutputScript());
+
+        } else {
+            $classifier = new OutputClassifier($outputScript);
+
+            $inputState->setScriptType($classifier->classify());
+            $inputState->setPreviousOutputScript($outputScript);
+        }
+
+        $this->extractSigs($inputState);
+
+        // force myself to use $inputState
+        unset($redeemScript, $outputScript, $sigHashType);
+
+        $prevOutType = $inputState->getScriptType();
+
+        $parse = $inputState->getPreviousOutputScript()->getScriptParser()->parse();
         $signatureHash = $this->transaction->signatureHash();
         $pubKeyHash = $privateKey->getPubKeyHash();
 
         if ($prevOutType == OutputClassifier::PAYTOPUBKEYHASH) {
             if ($parse[2]->getBinary() == $pubKeyHash->getBinary()) {
-                $hash = $signatureHash->calculate($outputScript, $inputToSign, $sigHashType);
-                $signatures = [$this->sign($privateKey, $hash, $sigHashType)];
+                $hash = $signatureHash->calculate($inputState->getPreviousOutputScript(), $inputToSign, $inputState->getSigHashType());
+                $inputState->setSignatures([$this->sign($privateKey, $hash)]);
             }
 
             // TODO: P2SH !== multisig, more work to be done here..
         } else if (in_array($prevOutType, [OutputClassifier::PAYTOSCRIPTHASH, OutputClassifier::MULTISIG])) {
-            if (!isset($this->redeemScript[$inputToSign])) {
+            if (!$inputState->getRedeemScript()) {
                 throw new \Exception('Redeem script should be passed when signing a p2sh input');
             }
 
-            if ($parse[1]->getBinary() == $redeemScript->getScriptHash()->getBinary()) {
-                $signatures = [];
-                $hash = $signatureHash->calculate($redeemScript, $inputToSign, $sigHashType);
-                foreach ($this->redeemScript[$inputToSign]->getKeys() as $key) {
+            if ($parse[1]->getBinary() == $inputState->getRedeemScript()->getScriptHash()->getBinary()) {
+                $hash = $signatureHash->calculate($inputState->getRedeemScript()->getOutputScript(), $inputToSign, $inputState->getSigHashType());
+                foreach ($inputState->getRedeemScript()->getKeys() as $idx => $key) {
                     if ($pubKeyHash->getBinary() == $key->getPubKeyHash()->getBinary()) {
-                        $signatures[] = $this->sign($privateKey, $hash, $sigHashType);
-                        // todo: this is required for associating sigs with keys, and hence ordering signatures properly. how can it be avoided?
-                        $this->txHash[$inputToSign] = $hash;
+                        $inputState->setSignature($idx, $this->sign($privateKey, $hash));
                     }
                 }
             }
         } else {
             throw new \Exception('Unsupported transaction type');
-        }
-
-        if (isset($hash) && isset($signatures)) {
-            // ExtractSigs is only run once per input.
-            $this->extractSigs($inputToSign, $outputScript, $input->getScript(), $hash, $redeemScript);
-
-            // Add TransactionSignatures we were able to create
-            foreach ($signatures as $signature) {
-                $this->addSignature($inputToSign, $signature);
-            }
-
-            $this->addPublicKey($inputToSign, $privateKey->getPublicKey());
         }
 
         return $this;

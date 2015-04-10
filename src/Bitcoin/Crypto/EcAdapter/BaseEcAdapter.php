@@ -74,17 +74,17 @@ abstract class BaseEcAdapter implements EcAdapterInterface
     }
 
     /**
-     * @param SignatureCollection $signatures
+     * @param SignatureInterface[] $signatures
      * @param Buffer $messageHash
      * @param \BitWasp\Bitcoin\Key\PublicKeyInterface[] $publicKeys
      * @return SignatureInterface[]
      */
-    public function associateSigs(SignatureCollection $signatures, Buffer $messageHash, array $publicKeys)
+    public function associateSigs(array $signatures, Buffer $messageHash, array $publicKeys)
     {
         $sigCount = count($signatures);
         $linked = [];
 
-        foreach ($signatures->getSignatures() as $c => $signature) {
+        foreach ($signatures as $signature) {
             foreach ($publicKeys as $key) {
                 $verify = $this->verify($messageHash, $key, $signature);
                 if ($verify) {
