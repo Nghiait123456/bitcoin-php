@@ -3,6 +3,7 @@
 require_once __DIR__ . "/../vendor/autoload.php";
 
 use BitWasp\Bitcoin\Bitcoin;
+use BitWasp\Bitcoin\Script\ScriptFactory;
 use BitWasp\Bitcoin\Transaction\TransactionFactory;
 use BitWasp\Bitcoin\Address\AddressFactory;
 use BitWasp\Bitcoin\Key\PrivateKeyFactory;
@@ -25,17 +26,16 @@ $myTx = $bitcoind->getrawtransaction('8f792f166bc5f3821515cb5dfff1a967f5acc3d162
 $spendOutput = 1;
 $recipient = AddressFactory::fromString('n1b2a9rFvuU9wBgBaoWngNvvMxRV94ke3x');
 echo "[Send to: " . $recipient->getAddress($network) . " \n";
+var_dump(ScriptFactory::scriptPubKey()->payToAddress($recipient)->getHex());
 
 $builder = TransactionFactory::builder()
     ->spendOutput($myTx, $spendOutput)
     ->payToAddress($recipient, 40000);
 echo "setup stage\n";
-print_r($builder);
 
 echo "signing\n";
 $builder->signInputWithKey($privateKey, $myTx->getOutputs()->getOutput($spendOutput)->getScript(), 0);
 
-print_r($builder);
 echo "Generate transaction: \n";
 $new = $builder
     ->getTransaction();

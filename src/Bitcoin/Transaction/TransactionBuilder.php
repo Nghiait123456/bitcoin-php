@@ -2,6 +2,7 @@
 
 namespace BitWasp\Bitcoin\Transaction;
 
+use BitWasp\Bitcoin\Address\AddressFactory;
 use BitWasp\Bitcoin\Address\AddressInterface;
 use BitWasp\Bitcoin\Key\PublicKeyFactory;
 use BitWasp\Bitcoin\Signature\Signature;
@@ -78,12 +79,18 @@ class TransactionBuilder
      */
     public function spendOutput(TransactionInterface $tx, $outputToSpend)
     {
-        // Check TransactionOutput exists
-        $tx->getOutputs()->getOutput($outputToSpend);
+        $outputScript = $tx->getOutputs()->getOutput($outputToSpend)->getScript();
 
+        $this->addInput(new TransactionInput($tx->getTransactionId(), $outputToSpend, $outputScript));
+
+        return $this;
+    }
+
+    public function addInput(TransactionInput $txInput)
+    {
         $this->transaction
             ->getInputs()
-            ->addInput(new TransactionInput($tx->getTransactionId(), $outputToSpend));
+            ->addInput($txInput);
 
         return $this;
     }
@@ -102,6 +109,7 @@ class TransactionBuilder
             $value,
             ScriptFactory::scriptPubKey()->payToAddress($address)
         ));
+
         return $this;
     }
 
@@ -195,12 +203,18 @@ class TransactionBuilder
 
         $inputState = $this->inputStates[$forInput];
 
-        if ($inputState->getScriptType() === OutputClassifier::MULTISIG) {
-            $signatures = array_filter($inputState->getSignatures());
+        switch ($inputState->getScriptType()) {
+            case OutputClassifier::MULTISIG:
+                $signatures = array_filter($inputState->getSignatures());
 
-            return ScriptFactory::scriptSig()->multisigP2sh($inputState->getRedeemScript(), $signatures);
-        } else {
-            throw new \RuntimeException("Not implemented");
+                return ScriptFactory::scriptSig()->multisigP2sh($inputState->getRedeemScript(), $signatures);
+
+            case OutputClassifier::PAYTOPUBKEYHASH:
+                return ScriptFactory::scriptSig()->payToPubKeyHash($inputState->getSignatures()[0], $inputState->getPublicKeys()[0]);
+
+
+            default:
+                throw new \RuntimeException("Not implemented");
         }
 
 
@@ -275,9 +289,10 @@ class TransactionBuilder
 
     /**
      * @param PrivateKeyInterface $privateKey
+     * @param ScriptInterface $outputScript
      * @param $inputToSign
-     * @param int $sigHashType
      * @param RedeemScript $redeemScript
+     * @param int $sigHashType
      * @return $this
      * @throws \Exception
      */
@@ -307,17 +322,14 @@ class TransactionBuilder
                 $publicKeys = [];
 
                 // @TODO: use a switch on $classifier->classify here?
-                if ($classifier->isMultisig()) {
-                    $publicKeys = $redeemScript->getKeys();
+                switch ($classifier->classify()) {
+                    case OutputClassifier::MULTISIG:
+                        $publicKeys = $redeemScript->getKeys();
 
-                } else if ($classifier->isPayToPublicKeyHash()) {
-                    throw new \LogicException("Not implemented");
-                } else if ($classifier->isPayToPublicKey()) {
-                    throw new \LogicException("Not implemented");
-                } else if ($classifier->isPayToScriptHash()) {
-                    throw new \LogicException("Not implemented");
-                } else {
-                    throw new \InvalidArgumentException();
+                        break;
+
+                    default:
+                        throw new \LogicException("Not implemented");
                 }
 
                 if (!$inputState->getPreviousOutputScript()) {
@@ -328,19 +340,28 @@ class TransactionBuilder
                 $inputState->setPublicKeys($publicKeys);
                 $inputState->setRedeemScript($redeemScript);
                 $inputState->setScriptType($classifier->classify());
-
-
-
-                $prevOutType = $this->addClassification($inputToSign, $redeemScript)->getClassification($inputToSign);
-
             } else {
-                if ($inputState->getScriptType()) {
+                if ($outputScript = $input->getScript()) {
+                    $classifier = new OutputClassifier($outputScript);
 
+                    switch ($classifier->classify()) {
+                        case OutputClassifier::PAYTOPUBKEYHASH:
+                            $inputState->setPreviousOutputScript($outputScript);
+                            $inputState->setPreviousOutputClassifier($classifier->classify());
+                            $inputState->setScriptType(OutputClassifier::PAYTOPUBKEYHASH);
+
+                            break;
+
+
+                        default:
+                            throw new \LogicException("Not implemented");
+                    }
                 } else {
-                    $inputState->setPreviousOutputScript(ScriptFactory::scriptPubKey()->payToAddress($privateKey->getAddress()));
-                    $inputState->setPreviousOutputClassifier(OutputClassifier::PAYTOPUBKEYHASH);
+                    // if we don't know anything at all we asume that it's pubkeyhash for our private key
                     $inputState->setPublicKeys([$privateKey->getPublicKey()]);
-                    $inputState->setScriptType(/* @TODO: something */);
+                    $inputState->setPreviousOutputScript(ScriptFactory::scriptPubKey()->payToPubKeyHash($privateKey->getPublicKey()));
+                    $inputState->setPreviousOutputClassifier(OutputClassifier::PAYTOPUBKEYHASH);
+                    $inputState->setScriptType(OutputClassifier::PAYTOPUBKEYHASH);
                 }
             }
 

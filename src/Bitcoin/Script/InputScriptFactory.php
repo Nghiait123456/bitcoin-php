@@ -24,11 +24,11 @@ class InputScriptFactory
     }
 
     /**
-     * @param TransactionSignature $signature
+     * @param SignatureInterface $signature
      * @param PublicKeyInterface $publicKey
      * @return Script
      */
-    public function payToPubKeyHash(TransactionSignature $signature, PublicKeyInterface $publicKey)
+    public function payToPubKeyHash(SignatureInterface $signature, PublicKeyInterface $publicKey)
     {
            return ScriptFactory::create()
             ->push($signature->getBuffer())

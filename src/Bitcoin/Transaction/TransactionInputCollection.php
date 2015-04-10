@@ -22,10 +22,12 @@ class TransactionInputCollection extends Collection
      * Adds an input to the collection.
      *
      * @param TransactionInputInterface $input
+     * @return int
      */
     public function addInput(TransactionInputInterface $input)
     {
         $this->inputs[] = $input;
+        return count($this->inputs) - 1;
     }
 
     /**
