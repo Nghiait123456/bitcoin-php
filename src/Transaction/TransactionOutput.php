@@ -2,6 +2,8 @@
 
 namespace BitWasp\Bitcoin\Transaction;
 
+use BitWasp\Bitcoin\Address\Address;
+use BitWasp\Bitcoin\Network\NetworkInterface;
 use BitWasp\Bitcoin\Script\ScriptInterface;
 use BitWasp\Bitcoin\Serializable;
 use BitWasp\Bitcoin\Serializer\Transaction\TransactionOutputSerializer;
@@ -73,22 +75,12 @@ class TransactionOutput extends Serializable implements TransactionOutputInterfa
     }
 
     /**
-     * @param NetworkInterface|null $network
-     * @return Address
+     * {@inheritdoc}
+     * @see TransactionOutputInterface::getAddress()
      */
-    public function getAddress(NetworkInterface $network = null)
+    public function getAddress()
     {
-      $address = AddressFactory::fromOutputScript($this->getScript());
-      return $address;
-    }
-
-    /**
-     * @param NetworkInterface|null $network
-     * @return string
-     */
-    public function getAddressString(NetworkInterface $network = null)
-    {
-      return $this->getAddress($network)->getAddress();
+      return AddressFactory::fromOutputScript($this->getScript());
     }
 
 }

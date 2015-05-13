@@ -2,6 +2,7 @@
 
 namespace BitWasp\Bitcoin\Transaction;
 
+use BitWasp\Bitcoin\Address\AddressInterface;
 use BitWasp\Bitcoin\Script\ScriptInterface;
 use BitWasp\Bitcoin\SerializableInterface;
 
@@ -26,4 +27,9 @@ interface TransactionOutputInterface extends SerializableInterface
      * @return $this
      */
     public function setScript(ScriptInterface $script);
+
+    /**
+     * @return AddressInterface
+     */
+    public function getAddress();
 }
