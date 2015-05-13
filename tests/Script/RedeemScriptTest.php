@@ -97,7 +97,7 @@ class RedeemScriptTest extends AbstractTestCase
             ->op('OP_3')
             ->op('OP_CHECKMULTISIG');
 
-        $rs = RedeemSCript::fromScript($script);
+        $rs = RedeemScript::fromScript($script);
         $this->assertEquals(2, $rs->getRequiredSigCount());
         $this->assertEquals(3, $rs->getKeyCount());
         $this->assertEquals($pkHex, $rs->getKey(0)->getHex());
@@ -114,7 +114,7 @@ class RedeemScriptTest extends AbstractTestCase
             ->op('OP_3')
             ->op('OP_CHECKMULTISIG');
 
-        RedeemSCript::fromScript($script);
+        RedeemScript::fromScript($script);
     }
 
     /**
@@ -129,7 +129,7 @@ class RedeemScriptTest extends AbstractTestCase
             ->op('OP_3')
             ->op('OP_CHECKMULTISIG');
 
-        RedeemSCript::fromScript($script);
+        RedeemScript::fromScript($script);
     }
 
     public function testGetOutputScript()
